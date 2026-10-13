@@ -8,10 +8,20 @@
 
 /* Copyright 1993-2014 NVIDIA Corporation.  All rights reserved. */
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+#  include <arm_neon.h>
+#endif
+
 // Host functions for converting between FP32 and FP16 formats
 
 static inline void TH_halfbits2float(unsigned short* src, float* res)
 {
+#if defined(_M_ARM64) || defined(__aarch64__)
+    /* ARM64: use hardware vcvt_f32_f16 (FCVTL) */
+    uint16x4_t u16 = vdup_n_u16(*src);
+    float32x4_t f32 = vcvt_f32_f16(vreinterpret_f16_u16(u16));
+    *res = vgetq_lane_f32(f32, 0);
+#else
     unsigned h = *src;
     unsigned sign = ((h >> 15) & 1);
     unsigned exponent = ((h >> 10) & 0x1f);
@@ -36,10 +46,16 @@ static inline void TH_halfbits2float(unsigned short* src, float* res)
     }
 
     *(unsigned*)res = ((sign << 31) | (exponent << 23) | mantissa);
+#endif /* defined(_M_ARM64) || defined(__aarch64__) */
 }
 
 static inline void TH_float2halfbits(float* src, unsigned short* dest)
 {
+#if defined(_M_ARM64) || defined(__aarch64__)
+    /* ARM64: use hardware vcvt_f16_f32 (FCVT, round-to-nearest-even) */
+    float16x4_t f16 = vcvt_f16_f32(vdupq_n_f32(*src));
+    *dest = vget_lane_u16(vreinterpret_u16_f16(f16), 0);
+#else
     unsigned x = *(unsigned*)src;
     unsigned u = (x & 0x7fffffff), remainder, shift, lsb, lsb_s1, lsb_m1;
     unsigned sign, exponent, mantissa;
@@ -88,5 +104,6 @@ static inline void TH_float2halfbits(float* src, unsigned short* dest)
         }
     }  
 
-    *dest = (sign | (exponent << 10) | mantissa);  
+    *dest = (sign | (exponent << 10) | mantissa);
+#endif /* defined(_M_ARM64) || defined(__aarch64__) */
 }
