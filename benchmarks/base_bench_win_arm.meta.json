@@ -1,0 +1,41 @@
+﻿{
+    "timestampUtc":  "2026-10-13T06:07:43.1188296Z",
+    "branch":  "arm64-port",
+    "outputFile":  "C:\\src\\wos-porter\\FP16\\benchmarks\\base_bench_win_arm.json",
+    "nativeCommand":  "\u003cexe\u003e --benchmark_format=json --benchmark_out=\u003cpath\u003e",
+    "platform":  "ARM64",
+    "cpu":  "Snapdragon(R) X Elite - X1E78100 - Qualcomm(R) Oryon(TM) CPU",
+    "hostArch":  "AMD64",
+    "buildConfig":  "Release",
+    "commit":  "78640c9a90cd5e1bf0d98e262bcb20399d0a7bee",
+    "benchmarks":  [
+                       {
+                           "exe":  "C:\\src\\wos-porter\\FP16\\build-arm64\\Release\\alt-element-bench.exe",
+                           "name":  "alt-element-bench"
+                       },
+                       {
+                           "exe":  "C:\\src\\wos-porter\\FP16\\build-arm64\\Release\\ieee-element-bench.exe",
+                           "name":  "ieee-element-bench"
+                       },
+                       {
+                           "exe":  "C:\\src\\wos-porter\\FP16\\build-arm64\\Release\\from-ieee-array-bench.exe",
+                           "name":  "from-ieee-array-bench"
+                       },
+                       {
+                           "exe":  "C:\\src\\wos-porter\\FP16\\build-arm64\\Release\\from-alt-array-bench.exe",
+                           "name":  "from-alt-array-bench"
+                       },
+                       {
+                           "exe":  "C:\\src\\wos-porter\\FP16\\build-arm64\\Release\\to-ieee-array-bench.exe",
+                           "name":  "to-ieee-array-bench"
+                       },
+                       {
+                           "exe":  "C:\\src\\wos-porter\\FP16\\build-arm64\\Release\\to-alt-array-bench.exe",
+                           "name":  "to-alt-array-bench"
+                       }
+                   ],
+    "osBuild":  "26100",
+    "toolchain":  {
+                      "cl":  "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostarm64\\arm64\\cl.exe"
+                  }
+}
