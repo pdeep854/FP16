@@ -529,4 +529,111 @@ static inline uint16_t fp16_alt_from_fp32_value(float f) {
 	return (sign >> 16) | ((exp_f & UINT32_C(0x00007C00)) + (fp32_to_bits(base) & UINT32_C(0x00000FFF)));
 }
 
+#if (defined(_M_ARM64) || defined(__aarch64__)) && !FP16_USE_FLOAT16_TYPE && !FP16_USE_FP16_TYPE
+/*
+ * NEON-vectorized array conversion: ARM alternative FP16 → FP32 (bit representation).
+ * Processes 8 elements per iteration using NEON vclzq_u32 for renorm_shift.
+ * Falls back to scalar for the tail.
+ */
+static inline void fp16_alt_to_fp32_bits_array(
+	const uint16_t* __restrict input, uint32_t* __restrict output, size_t n)
+{
+	size_t i = 0;
+	for (; i + 8 <= n; i += 8) {
+		/* Load 8 fp16_alt values */
+		uint16x8_t h8 = vld1q_u16(input + i);
+
+		/* Widen to two uint32x4 vectors: w = (uint32_t)h << 16 */
+		uint32x4_t w_lo = vshlq_n_u32(vmovl_u16(vget_low_u16(h8)), 16);
+		uint32x4_t w_hi = vshlq_n_u32(vmovl_u16(vget_high_u16(h8)), 16);
+
+		/* sign = w & 0x80000000, nonsign = w & 0x7FFFFFFF */
+		const uint32x4_t sign_mask    = vdupq_n_u32(UINT32_C(0x80000000));
+		const uint32x4_t nonsign_mask = vdupq_n_u32(UINT32_C(0x7FFFFFFF));
+
+		uint32x4_t sign_lo    = vandq_u32(w_lo, sign_mask);
+		uint32x4_t nonsign_lo = vandq_u32(w_lo, nonsign_mask);
+		uint32x4_t sign_hi    = vandq_u32(w_hi, sign_mask);
+		uint32x4_t nonsign_hi = vandq_u32(w_hi, nonsign_mask);
+
+		/* renorm_shift = max(0, clz(nonsign) - 5) via saturating subtract */
+		uint32x4_t rs_lo = vqsubq_u32(vclzq_u32(nonsign_lo), vdupq_n_u32(5));
+		uint32x4_t rs_hi = vqsubq_u32(vclzq_u32(nonsign_hi), vdupq_n_u32(5));
+
+		/* zero_mask: 0xFFFFFFFF if nonsign==0 */
+		uint32x4_t zero_lo = vceqq_u32(nonsign_lo, vdupq_n_u32(0));
+		uint32x4_t zero_hi = vceqq_u32(nonsign_hi, vdupq_n_u32(0));
+
+		/* (nonsign << renorm_shift) >> 3 + ((0x70 - renorm_shift) << 23) */
+		uint32x4_t shifted_lo = vshrq_n_u32(vshlq_u32(nonsign_lo, vreinterpretq_s32_u32(rs_lo)), 3);
+		uint32x4_t shifted_hi = vshrq_n_u32(vshlq_u32(nonsign_hi, vreinterpretq_s32_u32(rs_hi)), 3);
+		const uint32x4_t bias70 = vdupq_n_u32(UINT32_C(0x70));
+		uint32x4_t exp_lo = vshlq_n_u32(vsubq_u32(bias70, rs_lo), 23);
+		uint32x4_t exp_hi = vshlq_n_u32(vsubq_u32(bias70, rs_hi), 23);
+		uint32x4_t sum_lo = vaddq_u32(shifted_lo, exp_lo);
+		uint32x4_t sum_hi = vaddq_u32(shifted_hi, exp_hi);
+
+		/* result = sign | (sum & ~zero_mask) */
+		uint32x4_t res_lo = vorrq_u32(sign_lo, vbicq_u32(sum_lo, zero_lo));
+		uint32x4_t res_hi = vorrq_u32(sign_hi, vbicq_u32(sum_hi, zero_hi));
+
+		vst1q_u32(output + i,     res_lo);
+		vst1q_u32(output + i + 4, res_hi);
+	}
+	/* Scalar tail */
+	for (; i < n; i++) {
+		output[i] = fp16_alt_to_fp32_bits(input[i]);
+	}
+}
+
+/*
+ * NEON-vectorized array conversion: ARM alternative FP16 → FP32 (float value).
+ * Uses hardware FCVTL for the common case (exp 0x01-0x1E) via vcvt_f32_f16.
+ * Handles exp=0x1F (ALT = large finite) branchlessly.
+ * Processes 8 elements per iteration.
+ */
+static inline void fp16_alt_to_fp32_value_array(
+	const uint16_t* __restrict input, float* __restrict output, size_t n)
+{
+	size_t i = 0;
+	for (; i + 8 <= n; i += 8) {
+		uint16x8_t h8 = vld1q_u16(input + i);
+
+		/* Detect exp=0x1F elements (ALT finite, not IEEE Inf/NaN) */
+		const uint16x8_t exp_mask16 = vdupq_n_u16(UINT16_C(0x7C00));
+		uint16x8_t is_exp31 = vceqq_u16(vandq_u16(h8, exp_mask16), exp_mask16);
+
+		/* IEEE hardware conversion (correct for exp 0x00-0x1E) */
+		float32x4_t ieee_lo = vcvt_f32_f16(vreinterpretq_f16_u16(vget_low_u16(h8)));  /* low 4 */
+		/* For the high 4, widen manually: vcvt_high_f32_f16 is vcvt_f32_f16 on the high half */
+		float32x4_t ieee_hi = vcvt_high_f32_f16(vreinterpretq_f16_u16(h8));            /* high 4 */
+
+		/* Compute exp=0x1F ALT result: sign|(0x8F<<23)|(mantissa<<13) */
+		uint32x4_t h_lo32 = vmovl_u16(vget_low_u16(h8));
+		uint32x4_t h_hi32 = vmovl_u16(vget_high_u16(h8));
+		uint32x4_t alt_lo = vorrq_u32(
+			vshlq_n_u32(vandq_u32(h_lo32, vdupq_n_u32(UINT32_C(0x8000))), 16),
+			vorrq_u32(vdupq_n_u32(UINT32_C(0x8F) << 23),
+			          vshlq_n_u32(vandq_u32(h_lo32, vdupq_n_u32(UINT32_C(0x03FF))), 13)));
+		uint32x4_t alt_hi = vorrq_u32(
+			vshlq_n_u32(vandq_u32(h_hi32, vdupq_n_u32(UINT32_C(0x8000))), 16),
+			vorrq_u32(vdupq_n_u32(UINT32_C(0x8F) << 23),
+			          vshlq_n_u32(vandq_u32(h_hi32, vdupq_n_u32(UINT32_C(0x03FF))), 13)));
+
+		/* Blend: use ALT result where exp=0x1F, IEEE result elsewhere */
+		uint32x4_t mask_lo = vmovl_u16(vget_low_u16(is_exp31));
+		uint32x4_t mask_hi = vmovl_u16(vget_high_u16(is_exp31));
+		uint32x4_t res_lo = vbslq_u32(mask_lo, alt_lo, vreinterpretq_u32_f32(ieee_lo));
+		uint32x4_t res_hi = vbslq_u32(mask_hi, alt_hi, vreinterpretq_u32_f32(ieee_hi));
+
+		vst1q_f32(output + i,     vreinterpretq_f32_u32(res_lo));
+		vst1q_f32(output + i + 4, vreinterpretq_f32_u32(res_hi));
+	}
+	/* Scalar tail */
+	for (; i < n; i++) {
+		output[i] = fp16_alt_to_fp32_value(input[i]);
+	}
+}
+#endif /* defined(_M_ARM64) || defined(__aarch64__) */
+
 #endif /* FP16_FP16_H */
