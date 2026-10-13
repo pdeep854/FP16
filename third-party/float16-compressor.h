@@ -1,7 +1,11 @@
 #pragma once
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+#  include <arm_neon.h>
+#endif
+
 /*
- * This code snippet posted by user Phernost on 
+ * This code snippet posted by user Phernost on
  * https://stackoverflow.com/questions/1659440/32-bit-to-16-bit-floating-point-conversion
  *
  * compress and decompress methods are made "inline" for performance
@@ -43,6 +47,10 @@ public:
 
 	inline static uint16_t compress(float value)
 	{
+#if defined(_M_ARM64) || defined(__aarch64__)
+		/* ARM64: use hardware vcvt_f16_f32 (FCVT, round-to-nearest-even) */
+		return vget_lane_u16(vreinterpret_u16_f16(vcvt_f16_f32(vdupq_n_f32(value))), 0);
+#else
 		Bits v, s;
 		v.f = value;
 		uint32_t sign = v.si & signN;
@@ -57,10 +65,17 @@ public:
 		v.si ^= ((v.si - maxD) ^ v.si) & -(v.si > maxC);
 		v.si ^= ((v.si - minD) ^ v.si) & -(v.si > subC);
 		return v.ui | sign;
+#endif /* defined(_M_ARM64) || defined(__aarch64__) */
 	}
 
 	inline static float decompress(uint16_t value)
 	{
+#if defined(_M_ARM64) || defined(__aarch64__)
+		/* ARM64: use hardware vcvt_f32_f16 (FCVTL, correct IEEE semantics) */
+		uint16x4_t u16 = vdup_n_u16(value);
+		float32x4_t f32 = vcvt_f32_f16(vreinterpret_f16_u16(u16));
+		return vgetq_lane_f32(f32, 0);
+#else
 		Bits v;
 		v.ui = value;
 		int32_t sign = v.si & signC;
@@ -76,5 +91,6 @@ public:
 		v.si ^= (s.si ^ v.si) & mask;
 		v.si |= sign;
 		return v.f;
+#endif /* defined(_M_ARM64) || defined(__aarch64__) */
 	}
 };
