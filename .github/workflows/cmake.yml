@@ -184,3 +184,15 @@ jobs:
         run: cmake -Bbuild -S. -G "Visual Studio 16 2019" -A ARM64 -DFP16_BUILD_COMPARATIVE_BENCHMARKS=ON
       - name: Build
         run: cmake --build build --config Release --parallel
+  # ARM64 support
+  cmake-windows-arm64-native:
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -Bbuild -S. -G "Visual Studio 17 2022" -A ARM64 -DFP16_BUILD_COMPARATIVE_BENCHMARKS=ON
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build --build-config Release --parallel --output-on-failure
