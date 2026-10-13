@@ -48,6 +48,10 @@
 #ifndef EIGEN_HALF_CUDA_H
 #define EIGEN_HALF_CUDA_H
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+#  include <arm_neon.h>
+#endif
+
 namespace Eigen {
 
 namespace half_impl {
@@ -87,6 +91,12 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC __half float_to_half_rtne(float ff) {
   __half h;
   h.x = _cvtss_sh(ff, 0);
   return h;
+
+#elif defined(_M_ARM64) || defined(__aarch64__)
+  /* ARM64: use hardware vcvt_f16_f32 (FCVT, round-to-nearest-even) */
+  __half o;
+  o.x = vget_lane_u16(vreinterpret_u16_f16(vcvt_f16_f32(vdupq_n_f32(ff))), 0);
+  return o;
 
 #else
   FP32 f; f.f = ff;
@@ -140,6 +150,10 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC float half_to_float(__half h) {
 
 #elif defined(EIGEN_HAS_FP16_C)
   return _cvtsh_ss(h.x);
+
+#elif defined(_M_ARM64) || defined(__aarch64__)
+  /* ARM64: use hardware vcvt_f32_f16 (FCVTL) */
+  return vgetq_lane_f32(vcvt_f32_f16(vreinterpret_f16_u16(vdup_n_u16(h.x))), 0);
 
 #else
   const FP32 magic = { 113 << 23 };
