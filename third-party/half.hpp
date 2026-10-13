@@ -156,6 +156,10 @@
 #endif
 #undef HALF_GNUC_VERSION
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+#  include <arm_neon.h>
+#endif
+
 //support constexpr
 #if HALF_ENABLE_CPP11_CONSTEXPR
 	#define HALF_CONSTEXPR			constexpr
@@ -426,6 +430,12 @@ namespace half_float
 		/// \return binary representation of half-precision value
 		template<std::float_round_style R> uint16 float2half_impl(float value, true_type)
 		{
+#if defined(_M_ARM64) || defined(__aarch64__)
+			/* ARM64: hardware vcvt_f16_f32 handles round-to-nearest-even */
+			if (R == std::round_to_nearest) {
+				return vget_lane_u16(vreinterpret_u16_f16(vcvt_f16_f32(vdupq_n_f32(value))), 0);
+			}
+#endif
 		#if HALF_ENABLE_CPP11_STATIC_ASSERT
 			static_assert(std::numeric_limits<float>::is_iec559, "float to half conversion needs IEEE 754 conformant 'float' type");
 			static_assert(sizeof(uint32)==sizeof(float), "float to half conversion needs unsigned integer type of exactly the size of a 'float'");
@@ -505,6 +515,12 @@ namespace half_float
 		/// \return binary representation of half-precision value
 		template<std::float_round_style R> uint16 float2half_impl(float value, false_type)
 		{
+#if defined(_M_ARM64) || defined(__aarch64__)
+			/* ARM64: hardware vcvt_f16_f32 handles round-to-nearest-even */
+			if (R == std::round_to_nearest) {
+				return vget_lane_u16(vreinterpret_u16_f16(vcvt_f16_f32(vdupq_n_f32(value))), 0);
+			}
+#endif
 			uint16 hbits = builtin_signbit(value) << 15;
 			if(value == 0.0f)
 				return hbits;
@@ -616,6 +632,10 @@ namespace half_float
 		/// \return single-precision value
 		inline float half2float_impl(uint16 value, true_type)
 		{
+#if defined(_M_ARM64) || defined(__aarch64__)
+			/* ARM64: use hardware vcvt_f32_f16 (FCVTL) — faster than a 2KB table lookup */
+			return vgetq_lane_f32(vcvt_f32_f16(vreinterpret_f16_u16(vdup_n_u16(value))), 0);
+#endif
 		#if HALF_ENABLE_CPP11_STATIC_ASSERT
 			static_assert(std::numeric_limits<float>::is_iec559, "half to float conversion needs IEEE 754 conformant 'float' type");
 			static_assert(sizeof(uint32)==sizeof(float), "half to float conversion needs unsigned integer type of exactly the size of a 'float'");
