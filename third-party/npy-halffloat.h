@@ -9,6 +9,10 @@
  */
 
 #include <cstdint>
+#include <cstring>
+#if defined(_M_ARM64) || defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 typedef uint16_t npy_uint16;
 typedef uint32_t npy_uint32;
 typedef uint64_t npy_uint64;
@@ -33,6 +37,11 @@ typedef uint64_t npy_uint64;
 
 static inline npy_uint16 npy_floatbits_to_halfbits(npy_uint32 f)
 {
+#if defined(_M_ARM64) || defined(__aarch64__)
+    float f_val;
+    memcpy(&f_val, &f, sizeof(f_val));
+    return (npy_uint16) vget_lane_u16(vreinterpret_u16_f16(vcvt_f16_f32(vdupq_n_f32(f_val))), 0);
+#else
     npy_uint32 f_exp, f_sig;
     npy_uint16 h_sgn, h_exp, h_sig;
 
@@ -144,6 +153,7 @@ static inline npy_uint16 npy_floatbits_to_halfbits(npy_uint32 f)
 #else
     return h_sgn + h_exp + h_sig;
 #endif
+#endif /* ARM64 */
 }
 
 static inline npy_uint16 npy_doublebits_to_halfbits(npy_uint64 d)
@@ -264,6 +274,12 @@ static inline npy_uint16 npy_doublebits_to_halfbits(npy_uint64 d)
 
 static inline npy_uint32 npy_halfbits_to_floatbits(npy_uint16 h)
 {
+#if defined(_M_ARM64) || defined(__aarch64__)
+    float f_val = vgetq_lane_f32(vcvt_f32_f16(vreinterpret_f16_u16(vdup_n_u16(h))), 0);
+    npy_uint32 result;
+    memcpy(&result, &f_val, sizeof(result));
+    return result;
+#else
     npy_uint16 h_exp, h_sig;
     npy_uint32 f_sgn, f_exp, f_sig;
 
@@ -292,6 +308,7 @@ static inline npy_uint32 npy_halfbits_to_floatbits(npy_uint16 h)
             /* Just need to adjust the exponent and shift */
             return f_sgn + (((npy_uint32)(h&0x7fffu) + 0x1c000u) << 13);
     }
+#endif /* ARM64 */
 }
 
 static inline npy_uint64 npy_halfbits_to_doublebits(npy_uint16 h)

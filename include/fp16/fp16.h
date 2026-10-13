@@ -390,22 +390,6 @@ static inline uint32_t fp16_alt_to_fp32_bits(uint16_t h) {
  * floating-point operations and bitcasts between integer and floating-point variables.
  */
 static inline float fp16_alt_to_fp32_value(uint16_t h) {
-#if (defined(_M_ARM64) || defined(__aarch64__)) && FP16_USE_NATIVE_CONVERSION && !FP16_USE_FLOAT16_TYPE && !FP16_USE_FP16_TYPE
-	/*
-	 * ARM alternative FP16 is identical to IEEE FP16 for exponents 0x00-0x1E.
-	 * Only exponent 0x1F differs: ALT encodes a large finite value, IEEE encodes Inf/NaN.
-	 * Use the hardware vcvt_f32_f16 instruction for the common case (exp 0x00-0x1E)
-	 * and compute the exp=0x1F case directly.
-	 */
-	if ((h & UINT16_C(0x7C00)) == UINT16_C(0x7C00)) {
-		/* exp=0x1F in ARM ALT format: large finite value (not Inf/NaN) */
-		const uint32_t sign     = ((uint32_t)h & UINT32_C(0x8000)) << 16;
-		const uint32_t mantissa = ((uint32_t)(h & UINT16_C(0x03FF))) << 13;
-		return fp32_from_bits(sign | (UINT32_C(0x8F) << 23) | mantissa);
-	}
-	/* Common case: exponent 0x00-0x1E behaves identically to IEEE FP16 */
-	return vgetq_lane_f32(vcvt_f32_f16(vreinterpret_f16_u16(vdup_n_u16(h))), 0);
-#else
 	/*
 	 * Extend the half-precision floating-point number to 32 bits and shift to the upper part of the 32-bit word:
 	 *      +---+-----+------------+-------------------+
@@ -498,7 +482,6 @@ static inline float fp16_alt_to_fp32_value(uint16_t h) {
 	const uint32_t result = sign |
 		(two_w < denormalized_cutoff ? fp32_to_bits(denormalized_value) : fp32_to_bits(normalized_value));
 	return fp32_from_bits(result);
-#endif /* defined(_M_ARM64) || defined(__aarch64__) */
 }
 
 /*
