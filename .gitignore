@@ -20,3 +20,6 @@ Thumbs.db
 
 # wos-porter agent scratch state
 .copilot/
+
+# ARM64 build output
+build-arm64/
