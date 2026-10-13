@@ -24,9 +24,13 @@ static void fp16_alt_to_fp32_bits(benchmark::State& state) {
 
 		uint32_t* output = fp32.data();
 		const size_t n = state.range(0);
+#if defined(_M_ARM64) || defined(__aarch64__)
+		fp16_alt_to_fp32_bits_array(input, output, n);
+#else
 		for (size_t i = 0; i < n; i++) {
 			output[i] = fp16_alt_to_fp32_bits(input[i]);
 		}
+#endif
 
 		benchmark::DoNotOptimize(output);
 	}
@@ -49,9 +53,13 @@ static void fp16_alt_to_fp32_value(benchmark::State& state) {
 
 		float* output = fp32.data();
 		const size_t n = state.range(0);
+#if defined(_M_ARM64) || defined(__aarch64__)
+		fp16_alt_to_fp32_value_array(input, output, n);
+#else
 		for (size_t i = 0; i < n; i++) {
 			output[i] = fp16_alt_to_fp32_value(input[i]);
 		}
+#endif
 
 		benchmark::DoNotOptimize(output);
 	}
