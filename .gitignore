@@ -17,3 +17,6 @@ lib/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# wos-porter agent scratch state
+.copilot/
